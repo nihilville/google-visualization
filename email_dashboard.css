@@ -1,0 +1,95 @@
+.context-email-overview .main-container{width:100%;margin-top:20px;background:#eee;}
+.context-email-overview h2{margin-bottom:25px;}
+.context-email-overview h3{margin:10px 30px 20px 0px;padding-top:20px;}
+.context-email-overview h4{
+	font-family:arial;
+    font-size:15px;
+    font-weight:bold;
+    color:#000;
+}
+.col-md-6, .col-lg-6{padding-left:0px;}
+
+.form-container{
+	margin-left:50%;
+    margin-top:-280px;
+	margin-bottom:20px;
+	width:300px;
+	height:274px;
+}
+.form-control{margin-top:5px;color:#000;margin-bottom:0px;}
+.container-inline-date{clear:none;float:left;}
+.ui-datepicker table{margin-left:.3em;}
+.container-inline-date .form-item, .container-inline-date .form-item input{width:100px;}
+.container-inline-date .date-padding{padding:0px;}
+.date-padding label, .date-padding .help-block{display:none;}
+.ui-datepicker-calendar th{width:25px;padding:2px;}
+.ui-datepicker-calendar td{padding:0px;}
+.ui-state-default, .ui-widget-content .ui-state-default, .ui-widget-header .ui-state-default{width:25px;text-align:center;margin-bottom:5px;}
+
+.depPerformance table, .inboxRate{border:solid 3px #333333;}
+.depPerformance th, .inboxRate th{background:#7F87A7}
+.depPerformance td:first-child, .inboxRate td:first-child{background:#414141;color:#fff;}
+.inboxRate td:first-child{min-width:200px;}
+td, th{padding:10px;width:300px;border:solid 1px rgb(51, 51, 51);}
+
+ul.legend{
+	 float:right;
+	 list-style:none;
+	 margin:20px;
+	 border:solid 2px #ccc;
+	 border-radius:5px;
+	 padding:15px 20px;
+}
+.top-isps{
+	margin-top:-195px;
+}
+.isp-box{
+	padding:20px 0px;
+	border:solid #ccc;
+    border-radius:10px;
+    text-align:center;
+    font-size:20px;
+    color:#fff;
+    margin:0px 4% 20px 0px;
+    width:22%;
+	float:left;
+	background:-moz-linear-gradient(top, rgba(255,255,255,0.37) 0%, rgba(255,255,255,0.37) 1%, rgba(125,185,232,0) 100%); /* FF3.6-15 */
+	background:-webkit-linear-gradient(top, rgba(255,255,255,0.37) 0%,rgba(255,255,255,0.37) 1%,rgba(125,185,232,0) 100%); /* Chrome10-25,Safari5.1-6 */
+	background:linear-gradient(to bottom, rgba(255,255,255,0.37) 0%,rgba(255,255,255,0.37) 1%,rgba(125,185,232,0) 100%); /* W3C, IE10+, FF16+, Chrome26+, Opera12+, Safari7+ */
+	filter:progid:DXImageTransform.Microsoft.gradient( startColorstr='#5effffff', endColorstr='#007db9e8',GradientType=0 ); /* IE6-9 */
+    background-color:#5ab55a;
+}
+.isp-box p{
+	font-size:24px;
+    font-weight:bold;
+}
+.isp-box-medium{background-color:#F2CA02;color:#000;}
+.isp-box-low{background-color:#dd3333;}
+.isp-box-error{background-color:#ccc;}
+#aol{margin-right:0px;}
+.graph{
+    padding:0px;
+    border: solid 1px #ccc;
+    border-radius: 2px;
+	float:left;
+	margin-right:10px;
+	margin-bottom:10px;
+	background:#fff;
+}
+.graph > div:first-of-type:after{
+	content:"";
+	position:relative;
+    top:-20px;
+    float:right;
+    padding-right:30px;
+	color:#666;
+}
+#delivery-rate-graph > div:first-of-type:after, #open-rate-graph > div:first-of-type:after, #click-rate-graph > div:first-of-type:after{
+	content:"* (higher is better)";
+}
+#hard-bounce-rate-graph > div:first-of-type:after, #complaint-rate-graph > div:first-of-type:after{
+	content:"* (lower is better)";
+}
+#active-mailings-graph > div:first-of-type:after{
+	content:"* (number of mailings)";
+}

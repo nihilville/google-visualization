@@ -1,0 +1,567 @@
+<?php 
+
+/**
+ * @file 
+ * This module contains the Email KPI dashboard - header and legend can be found on node in the drupal admin
+ * 
+ */
+ 
+/*******************************************************************************
+ * Implements hook_block_info().
+ */
+function email_dashboard_block_info() {
+  $blocks["email_dashboard"] = array(
+    "info" => t("This block is the Email Dashboard Page."), 
+  );
+  return $blocks;
+}
+
+
+/***************************************************************************
+ * Implementation of hook_form().
+ * 
+ * BUILD FORM (the form will be used to filter graphs to one specific department, and then also to set a time span)
+ */
+function email_dashboard_form($form, &$form_state){
+  // Variables used later
+  $departmentName = "All";
+  if(isset($_GET['department'])){
+ 	 $departmentName = str_replace('_', ' ', $_GET['department']);
+  }
+  if(isset($_GET['start'])){
+  	$startDate = str_replace('-', '/', $_GET['start']);
+  }
+  if(isset($_GET['end'])){
+  	$endDate = str_replace('-', '/', $_GET['end']);
+  }
+  // The Form.API
+  $form["Title"] = array(
+    "#markup" => "<div class='form-container'><h3>Filter Graphs</h3>",
+  );
+  if(!isset($_GET['department'])){
+	  $form["Departments"] = array(
+		"#type" => "select",
+		"#size" => 1, 
+		"#title" => t("Department"),
+		"#empty_option" => "Select Department",
+		"#options" => uniqueDepartments(),
+	  );  
+	  $form['start_date'] = array(
+		'#type' => 'date_popup',
+		'#title' => t('Start Date'),
+		'#date_format' => "Y-m-d",
+		'#default_value' => date("Y-m-d", strtotime('-7 days')),
+		'#attributes' => array("placeholder" => "Select Start"),
+	  );
+	  $form['end_date'] = array(
+		'#type' => 'date_popup',
+		'#title' => t('End Date'),
+		'#date_format' => "Y-m-d",
+		'#default_value' => date("Y-m-d"),
+		'#attributes' => array("placeholder" => "Select End"),
+	  );
+	  $form["break"] = array(
+		  "#markup" => "<br style='clear:both;' />",
+	  );
+	  $form["Submit"] = array(
+		"#type" => "submit",
+		"#value" => t("Submit"),
+	  );
+  }else{
+	  $form["reset-btn"] = array(
+		  "#markup" => "<h4>Displaying results for: <br /><br />". $departmentName ."<br /><br />Over the time span: <br /><br />". $startDate . " to " . $endDate ."</h4><div class='btn btn-primary'><a href='/email-overview'><b>Reset Filters</b></a></div>",
+	  );
+  }
+
+  $form["end-container"] = array(
+	  "#markup" => "</div>",
+  );
+    //split up by section for readability
+  $topIspBlocks = '<div class="container"><div class="top-isps col-md-6"><h5>Top ISP Inbox Percent (average for all departments over last 7 days)</h5><div id="gmail" class="isp-box"><p>Gmail</p>' . ispPerformance('Gmail') . '</div><div id="yahoo" class="isp-box"><p>Yahoo</p>' . ispPerformance('Yahoo!') . '</div><div id="hotmail" class="isp-box"><p>Hotmail</p>' . ispPerformance('Hotmail') . '</div><div id="aol" class="isp-box"><p>Aol</p>' . ispPerformance('AOL') . '</div></div></div>';
+  
+  $graphContainers = '<a name="deliveryRate"></a><div id="delivery-rate-graph" class="graph" ></div><a name="openRate"></a><div id="open-rate-graph" class="graph"></div><div id="active-mailings-graph" class="graph"></div><a name="clickRate"></a><div id="click-rate-graph" class="graph"></div><a name="hardbounceRate"></a><div id="hard-bounce-rate-graph" class="graph"></div><a name="complaintRate"></a><div id="complaint-rate-graph" class="graph"></div>';
+  
+  $form["graphs"] = array(
+      "#markup" => $topIspBlocks . '<div class="container">' . $graphContainers . '<div class="col-lg-6"><h3>Top ISP Inbox Percent by Department: ' . (date('H') < 15 ? date('M d Y', time() - 60 * 60 * 24) : date("M d Y")) . '</h3><table class="inboxRate"><tr><th>Department</th><th>AOL</th><th>Gmail</th><th>Hotmail</th><th>Yahoo</th></tr>' . departmentByIsp("ml2-foo-com") . departmentByIsp("m15-foo-foo-com") . departmentByIsp("r-foo-foo-com") . departmentByIsp("share-foo-com") . departmentByIsp("e-foo-com") . departmentByIsp("n-foo-foo-com") . departmentByIsp("e-foo-foo-com") . departmentByIsp("pub-foo-com") . departmentByIsp("ml-foo-com") . '</table></div><div class="col-lg-6"><h3>Sender Score by Department: ' . date("M d Y") . '</h3>'. departmentPerformance() .'</div>',
+  );
+  return $form;
+}
+
+// Submit and add querystring to determine new query on load
+function email_dashboard_form_submit($form, &$form_state) {
+  $department = urlencode($form_state['values']['Departments']);
+  $startDateRange = urlencode($form_state['values']['start_date']);
+  $endDateRange = urlencode($form_state['values']['end_date']);
+  $gotoUrl =  "http://".$_SERVER["SERVER_NAME"]."/email-overview?department=" . htmlspecialchars($department, ENT_QUOTES) . "&start=" . htmlspecialchars($startDateRange, ENT_QUOTES) . "&end=" . htmlspecialchars($endDateRange, ENT_QUOTES);
+  drupal_goto($gotoUrl);
+}
+
+/**************************************************************************************************************
+ * Implements hook_block_view() (Keep functions and variables in the block itself, so they aren't going off on every page of the site)
+ */
+function email_dashboard_block_view($block_name = ""){
+	// The default date range is 7 days in the past to 1 day in the future (to catch everything that has happened today)
+	$start = date("Y-m-d", strtotime("-7 days"));
+	$end = date("Y-m-d", strtotime("+1 days"));
+	if(isset($_GET['start'])){
+		$start = date(preg_replace('/[^-a-zA-Z0-9_.]/', '', $_GET['start']));
+	}
+	if(isset($_GET['end'])){
+		$lastDigit = substr($_GET['end'], -1) + 1;
+		$end = date(preg_replace('/[^-a-zA-Z0-9_.]/', '', $_GET['end']));
+		$end = substr($end, 0, -1).$lastDigit;
+	}
+	//echo($start . "<br />" . $end);
+
+	// STRONGMAIL DATA CONNECTION
+	function strongmail_connect() {
+		// Define connection as a static variable, to avoid connecting more than once 
+		static $connection;
+		// Try and connect to the database, if a connection has not been established yet
+		if(!isset($connection)) {
+			// gonna pull our deets from a config file, cuz security
+			$config = parse_ini_file('config.ini'); 
+			$connection = mysqli_connect($config['server'],$config['username'],$config['password'],$config['dbname']);
+		}
+		// If connection was not successful, handle the error
+		if($connection === false) {
+			// Handle error - notify administrator, log to a file, show an error screen, or, you know, just shout fail
+			echo("FAIL"); 
+		}
+    	return $connection;
+	}
+	
+	function strongmail_query($query) {
+		$connection = strongmail_connect();
+		$result = mysqli_query($connection,$query);
+		//var_dump($result);
+		return $result;
+	}
+
+	function emailData($department, $start, $end){
+		// select all within the last 7 days, summming the total from each given timestamp
+		$query = 'SELECT run_date, SUM(delivered), SUM(unique_opens), SUM(unique_clicks), SUM(hard_bounces), SUM(total_failures), SUM(active_mailings), SUM(complaints), department FROM mailing_summary WHERE department = "' . $department . '" AND run_date BETWEEN CAST("' . $start . '" AS DATE) AND CAST("' . $end .'" AS DATE) GROUP BY run_date';
+		$result = strongmail_query($query);
+		$resultsArray = array();
+		while ($row = mysqli_fetch_array($result)) {
+	  		array_push($resultsArray, $row);
+			// replace NULL values, as that will mess up graphs and make them look horrible
+			if(end($resultsArray) == NULL){
+				array_pop($resultsArray);
+				array_push($resultsArray, 0);
+			}
+		}
+		return $resultsArray;
+	}
+	
+	function printTable(){
+		$query = 'SELECT DISTINCT(department) FROM mailing_summary WHERE run_date > DATE_SUB(NOW(), INTERVAL 7 DAY)';
+		$result = strongmail_query($query);
+		while ($row = mysqli_fetch_array($result)) {
+			var_dump($row);
+			echo("<hr />");
+		}
+	}
+	
+	// This is used to only show unique departments in the graphs, and also to create the filter by department dropdown
+	function uniqueDepartments(){
+		if(!isset($_GET['department']) || $_GET['department'] == ""){
+			$query = 'SELECT DISTINCT(department) FROM mailing_summary WHERE run_date > DATE_SUB(NOW(), INTERVAL 7 DAY)';
+		}else{
+			$departmentName = str_replace('_', ' ', $_GET['department']);
+			$query = 'SELECT DISTINCT(department) FROM mailing_summary WHERE run_date > DATE_SUB(NOW(), INTERVAL 7 DAY) AND department = "' . $departmentName . '"';
+		}
+		$result = strongmail_query($query);
+		$resultsArray = array();
+		while ($row = mysqli_fetch_array($result)) {
+			$cleanName = str_replace(' ', '_', $row[0]);
+	  		$resultsArray[$cleanName] = $row[0];
+		}
+		return $resultsArray;
+	}
+	$unique_departments = uniqueDepartments();
+	
+	// Function to get the dates used by each department
+	function datesArray($start, $end){
+		$query = 'SELECT DISTINCT(run_date) FROM mailing_summary WHERE run_date BETWEEN CAST("' . $start . '" AS DATE) AND CAST("' . $end .'" AS DATE) ORDER BY run_date ASC';
+		$result = strongmail_query($query);
+		$resultsArray = array();
+		while ($row = mysqli_fetch_array($result)) {
+	  		array_push($resultsArray, $row[0]);
+		}
+		return $resultsArray;
+
+	}
+	$dates_array = datesArray($start, $end);
+	
+	// Send each departments data to the js library for processing into graphs
+	$graphs_data = array();
+	foreach($unique_departments as $department){
+		$graph_data = emailData($department, $start, $end);
+		$safeDomain = preg_replace('/[ ]/', '', $department);
+		drupal_add_js(array('email_dashboard' => array('graphs_data_' . $safeDomain => $graph_data)), array('type' => 'setting'));
+	}
+	// Code for the google graphs
+    drupal_add_js("https://www.gstatic.com/charts/loader.js",array("cache" => false));
+    /*********************************** pass variables to javascript ****************************************************************/;
+	drupal_add_js(array('email_dashboard' => array('unique_departments' => $unique_departments)), array('type' => 'setting'));
+	drupal_add_js(array('email_dashboard' => array('dates_array' => $dates_array)), array('type' => 'setting'));
+	drupal_add_js(drupal_get_path('module', 'email_dashboard') . '/email_dashboard.js');
+	drupal_add_css(drupal_get_path('module', 'email_dashboard') . '/email_dashboard.css');
+	
+	/************************************** 250ok DATA CONNECTION ***********************************************************/
+	/** MongoDB settings 
+		User name : test
+		Password : Chang3m3
+		MongoDB host : foobar
+		MongoDB port : 27017
+		Database : authenticationDatabase
+	*/
+	$server_250k = "mongodb://foobar/250ok";
+	$manager_250k = new MongoDB\Driver\Manager($server_250k);
+	//var_dump($manager_250k);
+	//variable_set('email_graphs_db', $connection->selectDatabase("250ok"));
+	
+	$server_rp = "mongodb://test:foobar/rp";
+	$manager_rp = new MongoDB\Driver\Manager($server_rp);
+	//var_dump($manager_rp);
+	//variable_set('email_graphs_db_rp', $connection2->selectDatabase("rp"));
+	
+	// Show total inbox percent for each ISP
+	function ispPerformance($isp){
+		$scores = array();
+		$currentTime = date('Y-m-d\TH:i\Z', time());
+		if(date('H') < 16) {
+			$currentTime = date('Y-m-d\TH:i\Z', time() - 60 * 60 * 24);
+		}
+		try{
+		  //$collection = variable_get('email_graphs_db')->selectCollection("isps");
+		  // if not null, and within the date range
+		  $options = array(
+		  	'isp_inbox' => array('$ne' => null), 
+			'isp_name' => $isp,
+			'date' => array('$gte' => date("Y-m-d\TH:i\Z", strtotime('-7 days')), '$lte' => date("Y-m-d\TH:i\Z", strtotime('1 days'))),
+			);
+		  $filter = array(array("inbox_percent" => true),array("date" => true));
+		  $query = new MongoDB\Driver\Query($options, $filter);
+		  $cursor = $manager_250k->executeQuery('250k.isps', $query);
+		  foreach($cursor as $obj){
+			 array_push($scores, substr($obj['isp_inbox'], 0, -1));
+		  }
+		  // find average of the scores
+		  $scoreAverage = round(array_sum($scores) / count($scores), 2); 
+		  return "<span id='percent'>" . $scoreAverage . "</span>%"; 
+		}catch(MongoConnectionException $connectionException){
+			print $connectionException;
+			exit;
+		}
+	}
+	
+	// Show total Sender Score for each IP/Department - right hand side table - currently db is down
+	function departmentPerformance(){
+		/*$scoreTable = "<div class='depPerformance'><table><tr><th>Department</th><th>Sender Score</th></tr>";
+		try{
+		  //$collection = variable_get('email_graphs_db_rp')->selectCollection("ips");
+		  // if not null, and within the date range
+		  $options = array(
+		  	'sender_score' => array('$ne' => null), 
+			);
+		  $filter = array("sender_score" => true, "host" => true);
+		  //$cursor = $collection->find($where);
+		  $query = new MongoDB\Driver\Query($options, $filter);
+		  $cursor = $manager_rp->executeQuery('rp.isps', $query);
+		  //$cursor = $manager->executeQuery('db.collection', $query);
+		  //$cursor->fields(array("sender_score" => true, "host" => true));
+		  foreach($cursor as $obj){
+			 // Test email isn't present in this collection
+			 $department = $obj['host'];
+			 switch($department){
+				 case "smtp51.ml.yp.com":
+				   $department = "FOO 4 Schools";
+				   break;
+				 case "smtpvhost4.yp.com":
+				   $department = "FOO Test Email";
+				   break;
+				 case "smtpvhost3.foo.yp.com":
+				   $department = "Advertiser Reporting";
+				   break;
+				 case "smtpvhost2.yp.com":
+				   $department = "Consumer Share";
+				   break;
+				 case "smtpvhost3.yp.com":
+				   $department = "Consumer Marketing";
+				   break;
+				 case "smtpvhost1.yp.com":
+				   $department = "Consumer Transactional";
+				   break;
+				 case "smtpvhost1.foo.yp.com":
+				   $department = "Advertiser Transactional";
+				   break;
+				 case "smtpvhost2.foo.yp.com":
+				   $department = "Advertiser Notification";
+				   break;
+				 case "smtpvhost5.yp.com":
+				   $department = "Pub Transactional";
+				   break;
+				 default:
+				   $department = "";
+			 }
+			 if($department != ""){
+				 $scoreTable .= "<tr><td>" . $department . "</td><td>" . $obj['sender_score'] . "%</td></tr>";
+			 }
+		  }
+		  $scoreTable .= "</table></div>";
+		  return $scoreTable; 
+		}catch(MongoConnectionException $connectionException){
+			print $connectionException;
+			exit;
+		}*/
+	}
+	
+	// based on the department given, give isp performance info
+	function departmentByIsp($department){
+		// take the most recent data available (data is refreshed at 3pm, so it is either yesterdays or todays)
+		$currentTime = date('Y-m-d h:i:s', time());
+		if(date('H') < 16) {
+			$currentTime = date('Y-m-d h:i:s', time() - 60 * 60 * 24);
+		}
+		$ispList = array();
+		$departmentName = "";
+		switch($department){
+				 case "ml2-foo-com":
+				   $departmentName = "FOO 4 Schools";
+				   break;
+				 case "m15-foo-foo-com":
+				   $departmentName = "FOO Test Email";
+				   break;
+				 case "r-foo-foo-com":
+				   $departmentName = "Advertiser Reporting";
+				   break;
+				 case "share-foo-com":
+				   $departmentName = "Consumer Share";
+				   break;
+				 case "ml-foo-com":
+				   $departmentName = "Consumer Marketing";
+				   break;
+				 case "e-foo-com":
+				   $departmentName = "Consumer Transactional";
+				   break;
+				 case "n-foo-foo-com":
+				   $departmentName = "Advertiser Notification";
+				   break;
+				 case "e-foo-foo-com":
+				   $departmentName = "Advertiser Transactional";
+				   break;
+				 case "pub-foo-com":
+				   $departmentName = "Pub Transactional";
+				   break;
+		}
+		$ispResults = "<tr><td>".$departmentName."</td>";
+		try{
+		  $collection = variable_get('email_graphs_db')->selectCollection($department);
+		  $where = array('sender_score.score_date' => array('$gte' => $currentTime),);
+		  $cursor = $collection->find($where);
+		  foreach($cursor as $obj){
+			$ispList = $obj['isp_bulk_rate']['isps'];
+			echo("<hr />" . $departmentName . "<br />");
+			echo($obj['sender_score']['score_date'] . "<hr />");
+			var_dump($ispList);
+		  }
+		  foreach($ispList as $isp){
+			  $inboxRate = 100-intval($isp['you']);
+			  $ispResults .= "<td>". $inboxRate ."%</td>";
+		  }
+		  return $ispResults."</tr>"; 
+		}catch(MongoConnectionException $connectionException){
+			print $connectionException;
+			exit;
+		}
+	}
+	
+	
+    /***************************************** Now, finally, build the Module! ****************************************************/
+    if($block_name == "email_dashboard") {
+      $block["subject"] = t("Email Dashboard");
+
+	  $block['content'] = drupal_get_form("email_dashboard_form");
+    }
+    return $block;
+}
+
+
+/**********************************************************************************************************************************************************
+ * Implements hook_cron(). To check for notification conditions/trigger and send alert emails
+ */
+function email_dashboard_cron(){
+    // STRONGMAIL DATA CONNECTION
+	function strongmail_connect3() {
+		// Define connection as a static variable, to avoid connecting more than once 
+		static $connection;
+		// Try and connect to the database, if a connection has not been established yet
+		if(!isset($connection)) {
+			// gonna pull our deets from a config file, because of security
+			$config = parse_ini_file('config.ini'); 
+			$connection = mysqli_connect($config['server'],$config['username'],$config['password'],$config['dbname']);
+		}
+		// If connection was not successful, handle the error
+		if($connection === false) {
+			// Handle error - notify administrator, log to a file, show an error screen, or, you know, just shout fail
+			echo("FAIL"); 
+		}
+    	return $connection;
+	}
+	
+	function strongmail_query3($query) {
+		$connection = strongmail_connect3();
+		$result = mysqli_query($connection,$query);
+		return $result;
+	}
+	
+	function notificationTrigger(){
+		// select all within the last 7 days, summming the total from each given timestamp
+		$query = 'SELECT run_date, SUM(delivered), SUM(total_failures), SUM(complaints), department FROM mailing_summary WHERE run_date > SUBDATE(CURDATE(),1) GROUP BY department';
+		$result = strongmail_query3($query);
+		$emailText = "";
+		while ($row = mysqli_fetch_array($result)) {
+			// Complaint Rate Trigger
+			if(100*($row[3]/($row[1]+$row[2])) > .4){
+	  			$resultsArray[$row[4]] = round(100*($row[3]/($row[1]+$row[2])), 2);
+				$emailText .= "<li>For the Department <b><a href='foobar/email-overview?department=" . str_replace(' ', '_', $row[4]) . "#complaintRate'>" . $row[4] . "</a></b> the Complaint Rate has reached " . round(100*($row[3]/($row[1]+$row[2])), 2) . "%</li>";
+				$emailText .= "<br /><sub>* this email will alert when a departments email complaint rate for the previous day has gone over .4%, checked on a daily schedule</sub>";
+			}
+		}
+		return $emailText;
+	}
+	
+	$server = "mongodb://test:foobar/rp";
+	$connection = new MongoDB\Driver\Manager($server);
+	//variable_set('email_graphs_db', $connection->selectDatabase("rp"));
+	// check for ISP delivery rate below 80%
+	function departmentByIspTrigger(){
+		$currentTime = date('Y-m-d h:i:s', time());
+		$results = "";
+		$departmentList = array("ml2-foo-com", "m15-foo-foo-com", "r-foo-foo-com", "share-foo-com", "ml-foo-com", "e-foo-com", "n-foo-foo-com", "e-foo-foo-com", "pub-foo-com");
+		foreach($departmentList as $department){
+			$departmentName = "";
+			switch($department){
+				 case "ml2-foo-com":
+				   $departmentName = "FOO 4 Schools";
+				   break;
+				 case "m15-foo-foo-com":
+				   $departmentName = "FOO Test Email";
+				   break;
+				 case "r-foo-foo-com":
+				   $departmentName = "Advertiser Reporting";
+				   break;
+				 case "share-foo-com":
+				   $departmentName = "Consumer Share";
+				   break;
+				 case "ml-foo-com":
+				   $departmentName = "Consumer Marketing";
+				   break;
+				 case "e-foo-com":
+				   $departmentName = "Consumer Transactional";
+				   break;
+				 case "n-foo-foo-com":
+				   $departmentName = "Advertiser Notification";
+				   break;
+				 case "e-foo-foo-com":
+				   $departmentName = "Advertiser Transactional";
+				   break;
+				 case "pub-foo-com":
+				   $departmentName = "Pub Transactional";
+				   break;
+			 }
+
+		}
+		return $results;
+	}
+	
+	// This is the message that will be emailed if the triggering conditions are met
+	if(notificationTrigger() != "" || departmentByIspTrigger() != ""){
+		$message = "<html><body><h3>Warning:</h3>";
+		if(notificationTrigger() != ""){ $message .= "<ul>" . notificationTrigger() . "</ul>"; }
+		if(departmentByIspTrigger() != ""){ $message .= "<p>The following Department(s) have seen delivery rate for the listed ISPs fall below 80% today:</p><ul>" . departmentByIspTrigger() . "</ul>"; }
+		$message .= "</body></html>";
+		email_dashboard_mail_send($message);
+	}
+}
+
+/**
+ * Implement hook_mail().
+ *
+ * This hook defines a list of possible e-mail templates that this module can
+ * send. Each e-mail is given a unique identifier, or 'key'.
+ *
+ * $message comes in with some standard properties already set: 'to' address,
+ * 'from' address, and a set of default 'headers' from drupal_mail(). The goal
+ * of hook_mail() is to set the message's 'subject' and 'body' properties, as
+ * well as make any adjustments to the headers that are necessary.
+ *
+ * The $params argument is an array which can hold any additional data required
+ * to build the mail subject and body; for example, user-entered form data, or
+ * some context information as to where the mail request came from.
+ *
+ * Note that hook_mail() is not actually a hook. It is only called for a single
+ * module, the module named in the first argument of drupal_mail(). So it's
+ * a callback of a type, but not a hook.
+ */
+function email_dashboard_mail($key, &$message, $params) {
+  global $user;
+  // need this to send html in email
+  $headers = array(
+    'MIME-Version' => '1.0',
+    'Content-Type' => 'text/html; charset=UTF-8; format=flowed',
+    'Content-Transfer-Encoding' => '8Bit',
+    'X-Mailer' => 'Drupal'
+  );
+  $options = array(
+    'langcode' => $message['language']->language,
+  );
+  switch ($key) {
+    // Send a simple alert triggered by cron.
+    case 'alert':
+      $message['subject'] = t('Email Dashboard Alert', array('@site-name' => variable_get('site_name', 'Drupal')), $options);
+      // Note that the message body is an array, not a string.
+	  $message['body'][] = check_plain($params['alert']);
+	  foreach ($headers as $key => $value) {
+    	$message['headers'][$key] = $value;
+  	  }
+      break;
+  }
+}
+
+/**
+ * Sends an e-mail.
+ *
+ * @param $form_values
+ *   An array of values from the contact form fields that were submitted.
+ *   There are just two relevant items: $form_values['email'] and
+ *   $form_values['message'].
+ */
+function email_dashboard_mail_send($notification) {
+  // All system mails need to specify the module and template key (mirrored from
+  // hook_mail()) that the message they want to send comes from.
+  $module = 'email_dashboard';
+  $key = 'alert';
+
+  // Specify 'to' and 'from' addresses.
+  $to = 'concerned_parties@test.com';
+  $from = 'email_alert_bot@test.com';
+
+  // "params" loads in additional context for email content completion in
+  // hook_mail().
+  $params['alert'] = $notification;
+  $language = language_default();
+
+  // Whether or not to automatically send the mail when drupal_mail() is called.
+  $send = TRUE;
+  $result = drupal_mail($module, $key, $to, $language, $params, $from, $send);
+  if ($result['result'] == TRUE) {
+    return TRUE;
+  }
+  else {
+    drupal_set_message(t('There was a problem sending your message and it was not sent.'), 'error');
+  }
+
+}

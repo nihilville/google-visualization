@@ -1,0 +1,6 @@
+name = Mail Graphs Overview Page
+description = Landing page for the Email Graphs Dashboard
+package = Email Dashboard
+core = 7.x
+configure = admin/settings/email_dashboard
+files[] = email_dashboard.module
